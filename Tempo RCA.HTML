@@ -320,7 +320,8 @@
                 // Fetch QA Data
                 const { data: qa, error: qaError } = await supabaseClient.from('qa_data').select('*');
                 if (qaError) throw qaError;
-                if (qa) qaData = qa;
+                // Filter out the excluded agent immediately upon fetch
+                if (qa) qaData = qa.filter(item => item.agent.toLowerCase() !== 'mohamed halim');
 
                 // Fetch 5 Whys Data
                 const { data: whys, error: whysError } = await supabaseClient.from('five_whys').select('*');
@@ -424,9 +425,9 @@
                                 'Correctly_Diagnose', 'responsiveness', 'effectiveness', 'soft_Skills',
                                 'language', 'FCR', 'ownership', 'product_Awareness', 'tempo_Values',
                                 'process_Awareness', 'verification', 'documentations', 'crm_update',
-                                'workflow', 'Interaction_Protocols', 'fitness_fluency',
+                                'workflow', 'Interaction_Protocols',
                                 'Brand_Representation_Ownership', 'comm_Brand_Representation_Ownership'
-                            ];
+                            ]; // Removed 'fitness_fluency'
                             
                             attributesToCheck.forEach(attr => {
                                 if (row[attr] && String(row[attr]).trim().toLowerCase() === 'no') {
@@ -457,7 +458,7 @@
                             score: scoreVal || 0,
                             failedAttributes: failedAttrs
                         };
-                    });
+                    }).filter(item => item.agent.toLowerCase() !== 'mohamed halim'); // Filter out the excluded agent from uploads
                     
                     // Process 5 Whys (If a sheet contains "Whys" in the name)
                     const whysSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('whys'));
