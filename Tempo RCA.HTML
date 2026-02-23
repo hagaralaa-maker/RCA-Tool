@@ -271,10 +271,33 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="p-5 border border-red-200 rounded-lg bg-red-50 mt-6">
+                        <h3 class="font-bold text-red-800 mb-2 flex items-center gap-2"><i data-lucide="alert-triangle" class="w-5 h-5"></i> Danger Zone</h3>
+                        <p class="text-sm text-red-600 mb-4">Permanently delete all QA Data and 5 Whys Analysis from your database. This action cannot be undone.</p>
+                        <button onclick="openDeleteModal()" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors shadow-sm">
+                            Delete All Data
+                        </button>
+                    </div>
                 </div>
             </div>
 
         </main>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-modal" class="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-xl shadow-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="text-red-500 w-6 h-6"></i>
+                Delete All Data?
+            </h3>
+            <p class="text-slate-600 mb-6">This action cannot be undone. It will permanently delete all QA records and 5 Whys analyses from your database.</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeDeleteModal()" class="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+                <button onclick="executeDeleteAll()" class="px-4 py-2 bg-red-600 text-white font-medium hover:bg-red-700 rounded-lg transition-colors">Yes, Delete All</button>
+            </div>
+        </div>
     </div>
 
     <!-- JAVASCRIPT LOGIC -->
@@ -303,6 +326,45 @@
 
         // --- CORE FUNCTIONS ---
         
+        function openDeleteModal() {
+            document.getElementById('delete-modal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('delete-modal').classList.add('hidden');
+        }
+
+        async function executeDeleteAll() {
+            closeDeleteModal();
+            showLoading(true, "Deleting all data from Supabase...");
+
+            try {
+                // Supabase requires a filter for delete operations. neq('id', 'dummy') matches and deletes everything.
+                const { error: qaError } = await supabaseClient.from('qa_data').delete().neq('id', 'dummy_nonexistent_id');
+                if (qaError) throw qaError;
+
+                const { error: whysError } = await supabaseClient.from('five_whys').delete().neq('id', 'dummy_nonexistent_id');
+                if (whysError) throw whysError;
+
+                // Clear local state
+                qaData = [];
+                fiveWhysData = [];
+                timeFilter = 'All';
+
+                // Refresh UI
+                populateFilters();
+                renderAll();
+                
+                showLoading(true, "Data deleted successfully!");
+                setTimeout(() => showLoading(false), 2000);
+
+            } catch (error) {
+                console.error("Delete Error:", error);
+                showLoading(true, "Error deleting data.");
+                setTimeout(() => showLoading(false), 3000);
+            }
+        }
+
         function showLoading(show, text="Syncing with Supabase...") {
             const overlay = document.getElementById('loading-overlay');
             const loadText = document.getElementById('loading-text');
