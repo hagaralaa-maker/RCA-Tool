@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Analysis Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="flex h-screen bg-slate-50 font-sans text-slate-800">
+
+    <!-- SIDEBAR -->
+    <div class="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-xl z-10 flex-shrink-0">
+        <div class="p-6 border-b border-slate-800">
+            <h1 class="text-xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="clipboard-check" class="text-blue-500"></i>
+                QA Nexus
+            </h1>
+            <p class="text-xs text-slate-400 mt-1">Quality Analysis & CAPA Tool</p>
+        </div>
+        
+        <nav class="flex-1 p-4 space-y-1" id="sidebar-nav">
+            <button data-tab="dashboard" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 bg-blue-600 text-white shadow-md">
+                <div class="flex items-center gap-3"><i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard overview</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-70 btn-indicator"></i>
+            </button>
+            <button data-tab="agents" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+                <div class="flex items-center gap-3"><i data-lucide="users" class="w-5 h-5"></i> Agent Performance</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-0 btn-indicator"></i>
+            </button>
+            <button data-tab="errors" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+                <div class="flex items-center gap-3"><i data-lucide="alert-circle" class="w-5 h-5"></i> Error Trends</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-0 btn-indicator"></i>
+            </button>
+            <button data-tab="5whys" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+                <div class="flex items-center gap-3"><i data-lucide="file-search" class="w-5 h-5"></i> 5 Whys Analysis</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-0 btn-indicator"></i>
+            </button>
+            <button data-tab="capa" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+                <div class="flex items-center gap-3"><i data-lucide="clipboard-check" class="w-5 h-5"></i> Action Plans (CAPA)</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-0 btn-indicator"></i>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-slate-800">
+            <button data-tab="data" class="nav-btn w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-slate-400 hover:bg-slate-800 hover:text-slate-200">
+                <div class="flex items-center gap-3"><i data-lucide="database" class="w-5 h-5"></i> Data Source / Setup</div>
+                <i data-lucide="chevron-right" class="w-4 h-4 opacity-0 btn-indicator"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden w-full">
+        
+        <!-- HEADER -->
+        <header class="bg-white px-8 py-5 border-b border-slate-200 flex justify-between items-center shadow-sm shrink-0">
+            <div>
+                <h2 id="header-title" class="text-2xl font-bold text-slate-800 capitalize">Dashboard Overview</h2>
+                <p class="text-sm text-slate-500">Track, analyze, and improve multi-channel performance.</p>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                    <i data-lucide="calendar" class="w-4 h-4 text-slate-500"></i>
+                    <select id="time-filter" class="bg-transparent border-none text-sm font-medium outline-none text-slate-700 cursor-pointer pr-4 focus:ring-0">
+                        <option value="All">All Time</option>
+                        <!-- Options generated in JS -->
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- SCROLLABLE CONTENT AREA -->
+        <main class="flex-1 overflow-y-auto p-8">
+            
+            <!-- DASHBOARD TAB -->
+            <div id="tab-dashboard" class="tab-content active space-y-6">
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-blue-500">
+                        <div class="text-slate-500 text-sm font-medium mb-1">Average QA Score</div>
+                        <div class="flex items-end gap-3">
+                            <div class="text-3xl font-bold text-slate-800" id="kpi-avg-score">0%</div>
+                            <div id="kpi-score-trend" class="flex items-center text-sm mb-1 font-medium"></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-purple-500">
+                        <div class="text-slate-500 text-sm font-medium mb-1">Total Audits</div>
+                        <div class="text-3xl font-bold text-slate-800" id="kpi-total-audits">0</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-red-500">
+                        <div class="text-slate-500 text-sm font-medium mb-1">Total Errors Found</div>
+                        <div class="text-3xl font-bold text-slate-800" id="kpi-total-errors">0</div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-amber-500">
+                        <div class="text-slate-500 text-sm font-medium mb-1">Active Action Plans</div>
+                        <div class="text-3xl font-bold text-slate-800" id="kpi-active-plans">0</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row 1 -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 lg:col-span-2">
+                        <h3 class="text-lg font-semibold mb-6 flex items-center gap-2"><i data-lucide="trending-up" class="w-5 h-5"></i> Performance Trends (YoY / MoM)</h3>
+                        <div class="h-72 relative w-full">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h3 class="text-lg font-semibold mb-6">Queue Performance</h3>
+                        <div class="h-72 relative w-full">
+                            <canvas id="queueChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AGENTS TAB -->
+            <div id="tab-agents" class="tab-content">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-semibold">Agent Leaderboard & Breakdown</h3>
+                        <div class="relative">
+                            <i data-lucide="filter" class="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" id="agent-search" placeholder="Filter agents..." class="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-y border-slate-200">
+                                    <th class="p-4 font-semibold">Agent Name</th>
+                                    <th class="p-4 font-semibold">Total Audits</th>
+                                    <th class="p-4 font-semibold">Avg Score</th>
+                                    <th class="p-4 font-semibold">Total Errors</th>
+                                    <th class="p-4 font-semibold">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="agent-table-body" class="divide-y divide-slate-100">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ERRORS TAB -->
+            <div id="tab-errors" class="tab-content space-y-6">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h3 class="text-lg font-semibold mb-6 text-slate-800">Most Common QA Errors (By Attribute)</h3>
+                    <div class="h-80 relative w-full">
+                        <canvas id="errorChart"></canvas>
+                    </div>
+                    <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100 flex items-start gap-3">
+                        <i data-lucide="alert-circle" class="w-5 h-5 text-blue-500 mt-0.5"></i>
+                        <div>
+                            <h4 class="font-semibold text-blue-900">AI Insight</h4>
+                            <p class="text-sm text-blue-800 mt-1">
+                                <strong id="top-error-name">Process Adherence</strong> is consistently your highest failure point. We recommend initiating a 5 Whys analysis specifically for this attribute to uncover systemic blockers rather than treating individual agent failures.
+                            </p>
+                            <button onclick="switchTab('5whys')" class="mt-3 text-sm bg-blue-600 text-white px-4 py-2 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                                Start 5 Whys Analysis
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5 WHYS TAB -->
+            <div id="tab-5whys" class="tab-content space-y-6">
+                <div class="flex justify-between items-center">
+                    <p class="text-slate-600">Conduct deep-dive root cause analysis for recurring quality failures.</p>
+                    <button class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
+                        <i data-lucide="plus" class="w-4 h-4"></i> New Analysis
+                    </button>
+                </div>
+                
+                <div id="five-whys-container" class="space-y-6">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- CAPA TAB -->
+            <div id="tab-capa" class="tab-content space-y-6">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                    <h3 class="text-lg font-semibold mb-6">Corrective & Preventive Action Plans</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 text-slate-500 text-sm uppercase tracking-wider border-y border-slate-200">
+                                    <th class="p-4 font-semibold">Linked RC ID</th>
+                                    <th class="p-4 font-semibold w-1/3">Action Defined</th>
+                                    <th class="p-4 font-semibold">Type</th>
+                                    <th class="p-4 font-semibold">Owner</th>
+                                    <th class="p-4 font-semibold">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="capa-table-body" class="divide-y divide-slate-100">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DATA TAB -->
+            <div id="tab-data" class="tab-content max-w-3xl">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+                    <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="database" class="w-6 h-6 text-blue-500"></i> Google Sheets Integration Setup</h2>
+                    <p class="text-slate-600 mb-6 leading-relaxed">
+                        This dashboard is currently running on localized demo data. To connect this directly to your live Google Sheet and automate report generation, follow one of the methods below.
+                    </p>
+
+                    <div class="space-y-6">
+                        <div class="p-5 border border-slate-200 rounded-lg bg-slate-50">
+                            <h3 class="font-bold text-slate-800 mb-2">Method 1: API / Webhook (Recommended)</h3>
+                            <p class="text-sm text-slate-600 mb-4">Use a tool like Zapier or Make to push new QA rows from Google Sheets directly to this dashboard's backend API.</p>
+                            <div class="bg-slate-900 text-green-400 p-3 rounded font-mono text-sm overflow-x-auto">
+                                POST https://api.yourcompany.com/qa/ingest <br/>
+                                { <br/>
+                                &nbsp;&nbsp;"agent": "Agent Name", <br/>
+                                &nbsp;&nbsp;"queue": "Phone", <br/>
+                                &nbsp;&nbsp;"score": 85, <br/>
+                                &nbsp;&nbsp;"failedAttributes": ["Empathy"] <br/>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="p-5 border border-slate-200 rounded-lg">
+                            <h3 class="font-bold text-slate-800 mb-2">Method 2: CSV Export/Import</h3>
+                            <p class="text-sm text-slate-600 mb-4">Export your Google Sheet as a CSV and upload it directly here to update your dashboard data manually.</p>
+                            <div class="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer">
+                                <i data-lucide="database" class="w-8 h-8 mx-auto text-slate-400 mb-3"></i>
+                                <p class="text-sm font-medium text-slate-700">Click to upload or drag and drop your Google Sheets CSV here.</p>
+                                <p class="text-xs text-slate-500 mt-1">Required columns: Date, Agent, Queue, Score, Failed Attributes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- MOCK DATA GENERATOR ---
+        const generateQAEvaluations = () => {
+            const queues = ['Phone', 'Chat', 'Email'];
+            const agents = ['Alice Smith', 'Bob Johnson', 'Charlie Davis', 'Diana Prince', 'Evan Wright'];
+            const attributes = ['Greeting', 'Empathy', 'Process Adherence', 'Resolution', 'Documentation', 'Tone'];
+            
+            const data = [];
+            const startDate = new Date('2025-01-01');
+            
+            for (let i = 0; i < 300; i++) {
+                const date = new Date(startDate.getTime() + Math.random() * (400 * 24 * 60 * 60 * 1000));
+                const isBad = Math.random() > 0.8;
+                const score = isBad ? Math.floor(Math.random() * 30) + 50 : Math.floor(Math.random() * 15) + 85;
+                
+                let failed = [];
+                if (score < 100) {
+                    const numFailed = score < 70 ? 3 : (score < 85 ? 2 : 1);
+                    const shuffledAttrs = [...attributes].sort(() => 0.5 - Math.random());
+                    failed = shuffledAttrs.slice(0, numFailed);
+                }
+
+                data.push({
+                    id: `QA-${1000 + i}`,
+                    date: date.toISOString().split('T')[0],
+                    month: date.toLocaleString('default', { month: 'short', year: 'numeric' }),
+                    quarter: `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`,
+                    year: date.getFullYear().toString(),
+                    agent: agents[Math.floor(Math.random() * agents.length)],
+                    queue: queues[Math.floor(Math.random() * queues.length)],
+                    score: score,
+                    failedAttributes: failed,
+                });
+            }
+            return data.sort((a, b) => new Date(a.date) - new Date(b.date));
+        };
+
+        const qaData = generateQAEvaluations();
+
+        const fiveWhysData = [
+            {
+                id: 'RC-001',
+                date: '2025-10-15',
+                errorAttribute: 'Process Adherence',
+                problemStatement: 'Agents are failing to verify customer identity via standard security questions on chat.',
+                whys: [
+                    'They are skipping the security macro.',
+                    'The new CRM update moved the macro button to a hidden dropdown.',
+                    'Agents were not trained on the new CRM UI changes.',
+                    'The training team was not informed of the minor UI update by the IT team.',
+                    'There is no formal sign-off process between IT and Training for "minor" system updates.'
+                ],
+                rootCause: 'Lack of communication protocol between IT and Training for system UI updates.',
+                correctiveAction: 'Issue an immediate bulletin to all agents showing the new macro location.',
+                preventiveAction: 'Establish a mandatory IT-Training review step for all CRM deployments.',
+                owner: 'Training Dept',
+                status: 'In Progress'
+            },
+            {
+                id: 'RC-002',
+                date: '2025-11-02',
+                errorAttribute: 'Empathy',
+                problemStatement: 'Low empathy scores on the Phone queue during peak hours.',
+                whys: [
+                    'Agents sound rushed and dismissive.',
+                    'Agents are trying to keep their Average Handling Time (AHT) under the strict 3-minute target.',
+                    'Management heavily penalizes agents for exceeding AHT, even for complex issues.',
+                    'The AHT target was set based on simple password resets, not complex troubleshooting.',
+                    'Targets have not been recalibrated since we introduced new, more complex product lines.'
+                ],
+                rootCause: 'Misaligned AHT KPIs that do not account for new product complexity.',
+                correctiveAction: 'Temporarily relax AHT targets for troubleshooting queues.',
+                preventiveAction: 'Conduct a time-motion study to set distinct, realistic AHT targets per call type.',
+                owner: 'Ops Management',
+                status: 'Completed'
+            }
+        ];
+
+        // --- STATE & INITIALIZATION ---
+        let currentTab = 'dashboard';
+        let timeFilter = 'All';
+        
+        // Chart instances for destroying/recreating
+        let trendChartInst = null;
+        let queueChartInst = null;
+        let errorChartInst = null;
+
+        // --- CORE FUNCTIONS ---
+        
+        function getFilteredData() {
+            if (timeFilter === 'All') return qaData;
+            if (timeFilter.startsWith('Q')) return qaData.filter(d => d.quarter === timeFilter);
+            if (timeFilter.length === 4) return qaData.filter(d => d.year === timeFilter);
+            return qaData.filter(d => d.month === timeFilter);
+        }
+
+        function populateFilters() {
+            const select = document.getElementById('time-filter');
+            const years = [...new Set(qaData.map(d => d.year))];
+            const quarters = [...new Set(qaData.map(d => d.quarter))];
+            const months = [...new Set(qaData.map(d => d.month))];
+            
+            const options = [...years, ...quarters, ...months];
+            
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.textContent = opt;
+                select.appendChild(option);
+            });
+
+            select.addEventListener('change', (e) => {
+                timeFilter = e.target.value;
+                renderAll();
+            });
+        }
+
+        function setupTabs() {
+            const navBtns = document.querySelectorAll('.nav-btn');
+            navBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tabId = btn.getAttribute('data-tab');
+                    switchTab(tabId);
+                });
+            });
+            
+            // Search filter for agents
+            document.getElementById('agent-search').addEventListener('input', renderAgents);
+        }
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+            
+            // Update buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                const indicator = btn.querySelector('.btn-indicator');
+                if (btn.getAttribute('data-tab') === tabId) {
+                    btn.classList.add('bg-blue-600', 'text-white', 'shadow-md');
+                    btn.classList.remove('text-slate-400', 'hover:bg-slate-800', 'hover:text-slate-200');
+                    indicator.classList.remove('opacity-0');
+                    indicator.classList.add('opacity-70');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white', 'shadow-md');
+                    btn.classList.add('text-slate-400', 'hover:bg-slate-800', 'hover:text-slate-200');
+                    indicator.classList.remove('opacity-70');
+                    indicator.classList.add('opacity-0');
+                }
+            });
+
+            // Update content visibility
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            // Update Title
+            let titleText = tabId.replace(/([A-Z])/g, ' $1').trim();
+            if (tabId === '5whys') titleText = '5 Whys Root Cause';
+            if (tabId === 'capa') titleText = 'Action Plans (CAPA)';
+            document.getElementById('header-title').textContent = titleText.charAt(0).toUpperCase() + titleText.slice(1);
+
+            // Render specific charts if needed because Canvas needs visible dimensions
+            if (tabId === 'dashboard' || tabId === 'errors') {
+                renderAll();
+            }
+        }
+
+        // --- RENDERING LOGIC ---
+
+        function renderAll() {
+            const filtered = getFilteredData();
+            renderDashboard(filtered);
+            renderAgents(filtered);
+            renderErrors(filtered);
+            render5Whys();
+            renderCapa();
+        }
+
+        function renderDashboard(filtered) {
+            // Metrics
+            const totalScore = filtered.reduce((acc, curr) => acc + curr.score, 0);
+            const avgScore = filtered.length ? Math.round(totalScore / filtered.length) : 0;
+            const totalErrors = filtered.reduce((acc, curr) => acc + curr.failedAttributes.length, 0);
+            const activePlans = fiveWhysData.filter(d => d.status === 'In Progress').length;
+
+            document.getElementById('kpi-avg-score').textContent = `${avgScore}%`;
+            document.getElementById('kpi-total-audits').textContent = filtered.length;
+            document.getElementById('kpi-total-errors').textContent = totalErrors;
+            document.getElementById('kpi-active-plans').textContent = activePlans;
+
+            const trendEl = document.getElementById('kpi-score-trend');
+            if (avgScore >= 90) {
+                trendEl.innerHTML = `<i data-lucide="trending-up" class="w-4 h-4 mr-1"></i> On Target`;
+                trendEl.className = "flex items-center text-sm mb-1 font-medium text-green-600";
+            } else {
+                trendEl.innerHTML = `<i data-lucide="trending-down" class="w-4 h-4 mr-1"></i> Needs Focus`;
+                trendEl.className = "flex items-center text-sm mb-1 font-medium text-amber-500";
+            }
+            lucide.createIcons({ root: trendEl });
+
+            if(currentTab !== 'dashboard') return;
+
+            // Trend Chart Data
+            const monthlyStats = {};
+            qaData.forEach(d => {
+                if (!monthlyStats[d.month]) {
+                    monthlyStats[d.month] = { month: d.month, totalScore: 0, count: 0, Phone: 0, Chat: 0, Email: 0, phoneCount: 0, chatCount: 0, emailCount: 0 };
+                }
+                monthlyStats[d.month].totalScore += d.score;
+                monthlyStats[d.month].count += 1;
+                monthlyStats[d.month][d.queue] += d.score;
+                monthlyStats[d.month][`${d.queue.toLowerCase()}Count`] += 1;
+            });
+
+            const trendData = Object.values(monthlyStats).map(stat => ({
+                month: stat.month,
+                Overall: Math.round(stat.totalScore / stat.count),
+                Phone: stat.phoneCount ? Math.round(stat.Phone / stat.phoneCount) : null,
+                Chat: stat.chatCount ? Math.round(stat.Chat / stat.chatCount) : null,
+                Email: stat.emailCount ? Math.round(stat.Email / stat.emailCount) : null,
+            }));
+
+            if (trendChartInst) trendChartInst.destroy();
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            trendChartInst = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: trendData.map(d => d.month),
+                    datasets: [
+                        { label: 'Overall', data: trendData.map(d => d.Overall), borderColor: '#3b82f6', borderWidth: 3, tension: 0.3, pointRadius: 4 },
+                        { label: 'Phone', data: trendData.map(d => d.Phone), borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5, 5], tension: 0.3, pointRadius: 0 },
+                        { label: 'Chat', data: trendData.map(d => d.Chat), borderColor: '#10b981', borderWidth: 2, borderDash: [5, 5], tension: 0.3, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        y: { min: 70, max: 100, grid: { borderDash: [3, 3] }, border: {display: false} },
+                        x: { grid: { display: false }, border: {display: false} }
+                    },
+                    plugins: { legend: { position: 'bottom' } }
+                }
+            });
+
+            // Queue Chart Data
+            const queues = { Phone: { total: 0, count: 0 }, Chat: { total: 0, count: 0 }, Email: { total: 0, count: 0 } };
+            filtered.forEach(d => {
+                queues[d.queue].total += d.score;
+                queues[d.queue].count += 1;
+            });
+            const queueChartData = Object.keys(queues).map(q => ({
+                name: q,
+                avgScore: queues[q].count ? Math.round(queues[q].total / queues[q].count) : 0
+            }));
+
+            if (queueChartInst) queueChartInst.destroy();
+            const ctxQueue = document.getElementById('queueChart').getContext('2d');
+            queueChartInst = new Chart(ctxQueue, {
+                type: 'bar',
+                data: {
+                    labels: queueChartData.map(d => d.name),
+                    datasets: [{
+                        label: 'Avg Score',
+                        data: queueChartData.map(d => d.avgScore),
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { min: 0, max: 100, display: false },
+                        y: { grid: { display: false }, border: {display: false} }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function renderAgents(filteredParam) {
+            const filtered = Array.isArray(filteredParam) ? filteredParam : getFilteredData();
+            const searchTerm = document.getElementById('agent-search').value.toLowerCase();
+            
+            const agents = {};
+            filtered.forEach(d => {
+                if (!agents[d.agent]) agents[d.agent] = { name: d.agent, total: 0, count: 0, errors: 0 };
+                agents[d.agent].total += d.score;
+                agents[d.agent].count += 1;
+                agents[d.agent].errors += d.failedAttributes.length;
+            });
+            
+            const agentData = Object.values(agents)
+                .map(a => ({ ...a, avgScore: Math.round(a.total / a.count) }))
+                .filter(a => a.name.toLowerCase().includes(searchTerm))
+                .sort((a, b) => b.avgScore - a.avgScore);
+
+            const tbody = document.getElementById('agent-table-body');
+            tbody.innerHTML = agentData.map(agent => {
+                const initials = agent.name.split(' ').map(n => n[0]).join('');
+                let statusClass = agent.avgScore >= 90 ? 'bg-green-100 text-green-700' : (agent.avgScore >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700');
+                let statusText = agent.avgScore >= 90 ? 'Excelling' : (agent.avgScore >= 80 ? 'Needs Coaching' : 'PIP Required');
+                let scoreColor = agent.avgScore >= 90 ? 'text-green-600' : (agent.avgScore >= 80 ? 'text-amber-500' : 'text-red-500');
+                let barColor = agent.avgScore >= 90 ? 'bg-green-500' : (agent.avgScore >= 80 ? 'bg-amber-400' : 'bg-red-500');
+
+                return `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="p-4 font-medium text-slate-800 flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">${initials}</div>
+                            ${agent.name}
+                        </td>
+                        <td class="p-4 text-slate-600">${agent.count}</td>
+                        <td class="p-4">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold ${scoreColor}">${agent.avgScore}%</span>
+                                <div class="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div class="h-full ${barColor}" style="width: ${agent.avgScore}%"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-4 text-slate-600">${agent.errors}</td>
+                        <td class="p-4">
+                            <span class="px-2 py-1 rounded text-xs font-semibold ${statusClass}">${statusText}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderErrors(filtered) {
+            const errors = {};
+            filtered.forEach(d => {
+                d.failedAttributes.forEach(attr => {
+                    errors[attr] = (errors[attr] || 0) + 1;
+                });
+            });
+            const errorData = Object.entries(errors)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count);
+
+            if (errorData.length > 0) {
+                document.getElementById('top-error-name').textContent = errorData[0].name;
+            }
+
+            if(currentTab !== 'errors') return;
+
+            if (errorChartInst) errorChartInst.destroy();
+            const ctxError = document.getElementById('errorChart').getContext('2d');
+            errorChartInst = new Chart(ctxError, {
+                type: 'bar',
+                data: {
+                    labels: errorData.map(d => d.name),
+                    datasets: [{
+                        label: 'Error Count',
+                        data: errorData.map(d => d.count),
+                        backgroundColor: errorData.map((d, i) => i === 0 ? '#ef4444' : (i === 1 ? '#f97316' : '#94a3b8')),
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        y: { grid: { borderDash: [3, 3] }, border: {display: false} },
+                        x: { grid: { display: false }, border: {display: false}, ticks: { maxRotation: 45, minRotation: 45 } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function render5Whys() {
+            const container = document.getElementById('five-whys-container');
+            container.innerHTML = fiveWhysData.map(item => `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-slate-800">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-xs font-bold px-2 py-1 bg-red-100 text-red-700 rounded uppercase tracking-wider">${item.errorAttribute}</span>
+                                <span class="text-sm text-slate-500">${item.date}</span>
+                                <span class="text-xs text-slate-400">ID: ${item.id}</span>
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-800 mt-2">${item.problemStatement}</h3>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 rounded-lg p-5 border border-slate-200 mt-4">
+                        <h4 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                            <i data-lucide="file-search" class="w-4 h-4 text-blue-500"></i> The 5 Whys Progression
+                        </h4>
+                        <div class="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
+                            
+                            ${item.whys.map((why, i) => `
+                                <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                    <div class="flex items-center justify-center w-8 h-8 rounded-full border border-white bg-slate-200 text-slate-600 font-bold text-sm shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
+                                        ${i + 1}
+                                    </div>
+                                    <div class="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border border-slate-200 bg-white shadow-sm">
+                                        <p class="text-sm text-slate-700"><span class="font-semibold text-slate-400 mr-2">Why?</span> ${why}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+
+                        </div>
+                        
+                        <div class="mt-8 p-4 bg-red-50 border border-red-100 rounded-lg">
+                            <h4 class="text-sm font-bold text-red-800 uppercase tracking-wider mb-1">Identified Root Cause</h4>
+                            <p class="text-red-900 font-medium">${item.rootCause}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Re-initialize icons inside the new HTML
+            lucide.createIcons({ root: container });
+        }
+
+        function renderCapa() {
+            const actions = fiveWhysData.flatMap(item => [
+                { id: item.id, action: item.correctiveAction, type: 'Corrective', owner: item.owner, status: item.status },
+                { id: item.id, action: item.preventiveAction, type: 'Preventive', owner: item.owner, status: item.status }
+            ]);
+
+            const tbody = document.getElementById('capa-table-body');
+            tbody.innerHTML = actions.map(action => {
+                const typeClass = action.type === 'Corrective' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700';
+                const statusClass = action.status === 'Completed' ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700';
+                
+                return `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="p-4 font-medium text-slate-600 text-sm">${action.id}</td>
+                        <td class="p-4 text-slate-800 text-sm">${action.action}</td>
+                        <td class="p-4">
+                            <span class="px-2 py-1 rounded text-xs font-semibold ${typeClass}">${action.type}</span>
+                        </td>
+                        <td class="p-4 text-sm font-medium text-slate-600">${action.owner}</td>
+                        <td class="p-4">
+                            <span class="px-2 py-1 rounded-full text-xs font-semibold border ${statusClass}">${action.status}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // --- STARTUP ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize lucide icons globally
+            lucide.createIcons();
+            
+            populateFilters();
+            setupTabs();
+            renderAll();
+        });
+
+    </script>
+</body>
+</html>
