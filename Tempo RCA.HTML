@@ -257,9 +257,8 @@
                             </label>
                             
                             <div class="mt-4 p-4 bg-slate-50 rounded text-sm text-slate-600 border border-slate-200">
-                                <strong>Required Columns (Sheet 1):</strong> Date, Agent, Queue, Score, Failed Attributes<br/><br/>
-                                <span class="text-xs text-slate-500">Tip: Failed Attributes should be separated by commas (e.g., "Empathy, Tone").<br/>
-                                You can optionally add a second sheet named "5 Whys" with columns: ID, Date, Error Attribute, Problem Statement, Why 1, Why 2, Why 3, Why 4, Why 5, Root Cause, Corrective Action, Preventive Action, Owner, Status.</span>
+                                <strong>Supported Columns (Sheet 1):</strong> This tool will automatically read your raw QA exports. It looks for columns like <code>created_at</code>, <code>Agent_Name</code>, <code>Channel</code>, <code>Final_Score</code>, and it automatically extracts errors from attributes that are marked "No" (e.g., <code>Correctly_Diagnose</code>, <code>soft_Skills</code>).<br/><br/>
+                                <span class="text-xs text-slate-500">You can optionally add a second sheet named "5 Whys" with columns: ID, Date, Error Attribute, Problem Statement, Why 1, Why 2, Why 3, Why 4, Why 5, Root Cause, Corrective Action, Preventive Action, Owner, Status.</span>
                             </div>
                         </div>
                     </div>
@@ -350,29 +349,58 @@
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
                 qaData = jsonData.map((row, index) => {
+                    // Extract Date
+                    let dRaw = row['created_at'] || row['date_created'] || row['Date'];
                     let d;
-                    // Handle Excel serial date or standard date string
-                    if (typeof row['Date'] === 'number') {
-                         d = new Date((row['Date'] - (25567 + 2)) * 86400 * 1000);
+                    if (typeof dRaw === 'number') {
+                         d = new Date((dRaw - (25567 + 2)) * 86400 * 1000);
                     } else {
-                         d = new Date(row['Date']);
+                         d = new Date(dRaw);
                     }
                     if (isNaN(d.getTime())) d = new Date(); 
                     
+                    // Extract Failed Attributes
                     let failedAttrs = [];
                     if (row['Failed Attributes']) {
+                        // Fallback for simple manual CSV format
                         failedAttrs = String(row['Failed Attributes']).split(',').map(s => s.trim()).filter(s => s);
+                    } else {
+                        // Automatic extraction from exported system columns
+                        const attributesToCheck = [
+                            'Correctly_Diagnose', 'responsiveness', 'effectiveness', 'soft_Skills',
+                            'language', 'FCR', 'ownership', 'product_Awareness', 'tempo_Values',
+                            'process_Awareness', 'verification', 'documentations', 'crm_update',
+                            'workflow', 'Interaction_Protocols', 'fitness_fluency',
+                            'Brand_Representation_Ownership', 'comm_Brand_Representation_Ownership'
+                        ];
+                        
+                        attributesToCheck.forEach(attr => {
+                            if (row[attr] && String(row[attr]).trim().toLowerCase() === 'no') {
+                                // Format snake_case and camelCase to readable titles
+                                const formattedAttr = attr.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                failedAttrs.push(formattedAttr);
+                            }
+                        });
+                    }
+
+                    // Extract Score
+                    let rawScore = row['Final_Score'] || row['Score'];
+                    let scoreVal = 0;
+                    if (typeof rawScore === 'string') {
+                        scoreVal = Number(rawScore.replace('%', '').trim());
+                    } else if (typeof rawScore === 'number') {
+                        scoreVal = rawScore <= 1 && rawScore > 0 ? Math.round(rawScore * 100) : rawScore;
                     }
 
                     return {
-                        id: row['ID'] || `QA-${1000 + index}`,
+                        id: row['id'] || row['ID'] || `QA-${1000 + index}`,
                         date: d.toISOString().split('T')[0],
                         month: d.toLocaleString('default', { month: 'short', year: 'numeric' }),
                         quarter: `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`,
                         year: d.getFullYear().toString(),
-                        agent: row['Agent'] || 'Unknown Agent',
-                        queue: row['Queue'] || 'Unknown Queue',
-                        score: Number(row['Score']) || 0,
+                        agent: row['Agent_Name'] || row['Agent'] || 'Unknown Agent',
+                        queue: row['Channel'] || row['Queue'] || 'Unknown Queue',
+                        score: scoreVal || 0,
                         failedAttributes: failedAttrs
                     };
                 });
