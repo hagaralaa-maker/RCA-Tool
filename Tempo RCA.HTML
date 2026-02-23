@@ -14,6 +14,9 @@
     <!-- SheetJS for Excel/CSV parsing -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -98,8 +101,14 @@
         </header>
 
         <!-- SCROLLABLE CONTENT AREA -->
-        <main class="flex-1 overflow-y-auto p-8">
+        <main class="flex-1 overflow-y-auto p-8 relative">
             
+            <!-- Loading Overlay -->
+            <div id="loading-overlay" class="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center hidden">
+                <i data-lucide="loader-2" class="w-10 h-10 text-blue-500 animate-spin mb-4"></i>
+                <p class="text-slate-700 font-medium" id="loading-text">Syncing with Supabase...</p>
+            </div>
+
             <!-- DASHBOARD TAB -->
             <div id="tab-dashboard" class="tab-content active space-y-6">
                 <!-- KPI Cards -->
@@ -241,7 +250,7 @@
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
                     <h2 class="text-xl font-bold mb-4 flex items-center gap-2"><i data-lucide="database" class="w-6 h-6 text-blue-500"></i> Google Sheets / Excel Integration Setup</h2>
                     <p class="text-slate-600 mb-6 leading-relaxed">
-                        Export your Google Sheet or Excel workbook as a <strong>.xlsx</strong> or <strong>.csv</strong> file and upload it here to populate your dashboard.
+                        Export your Google Sheet or Excel workbook as a <strong>.xlsx</strong> or <strong>.csv</strong> file and upload it here to populate your Supabase database.
                     </p>
 
                     <div class="space-y-6">
@@ -270,6 +279,16 @@
 
     <!-- JAVASCRIPT LOGIC -->
     <script>
+        // --- SUPABASE INITIALIZATION ---
+        const supabaseUrl = 'https://dbnbfpbxyqldaakgnstc.supabase.co';
+        
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        // IMPORTANT: PASTE YOUR FULL ANON KEY FROM SUPABASE SETTINGS HERE:
+        // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRibmJmcGJ4eXFsZGFha2duc3RjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4Nzg3NTQsImV4cCI6MjA4NzQ1NDc1NH0.IVW-x8Gx0ACLFuZHMm9KEtaOPAHpy8AlCsEuYYapclw'; 
+        
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
         // --- STATE & INITIALIZATION ---
         let qaData = [];
         let fiveWhysData = [];
@@ -284,6 +303,40 @@
 
         // --- CORE FUNCTIONS ---
         
+        function showLoading(show, text="Syncing with Supabase...") {
+            const overlay = document.getElementById('loading-overlay');
+            const loadText = document.getElementById('loading-text');
+            if (show) {
+                loadText.textContent = text;
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        async function loadDataFromSupabase() {
+            showLoading(true, "Loading Dashboard Data...");
+            try {
+                // Fetch QA Data
+                const { data: qa, error: qaError } = await supabaseClient.from('qa_data').select('*');
+                if (qaError) throw qaError;
+                if (qa) qaData = qa;
+
+                // Fetch 5 Whys Data
+                const { data: whys, error: whysError } = await supabaseClient.from('five_whys').select('*');
+                if (whysError) throw whysError;
+                if (whys) fiveWhysData = whys;
+
+                populateFilters();
+                renderAll();
+            } catch (error) {
+                console.error("Error loading data from Supabase:", error);
+                // alert("Failed to load data from Supabase. Ensure you've created the tables and added your Anon Key.");
+            } finally {
+                showLoading(false);
+            }
+        }
+
         function getFilteredData() {
             if (timeFilter === 'All') return qaData;
             if (timeFilter.startsWith('Q')) return qaData.filter(d => d.quarter === timeFilter);
@@ -338,99 +391,119 @@
             const file = e.target.files[0];
             if (!file) return;
 
+            showLoading(true, "Processing and Uploading to Supabase...");
+
             const reader = new FileReader();
-            reader.onload = function(evt) {
-                const data = new Uint8Array(evt.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                
-                // Process QA Data (Assumes Sheet 1)
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-                qaData = jsonData.map((row, index) => {
-                    // Extract Date
-                    let dRaw = row['created_at'] || row['date_created'] || row['Date'];
-                    let d;
-                    if (typeof dRaw === 'number') {
-                         d = new Date((dRaw - (25567 + 2)) * 86400 * 1000);
-                    } else {
-                         d = new Date(dRaw);
-                    }
-                    if (isNaN(d.getTime())) d = new Date(); 
+            reader.onload = async function(evt) {
+                try {
+                    const data = new Uint8Array(evt.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
                     
-                    // Extract Failed Attributes
-                    let failedAttrs = [];
-                    if (row['Failed Attributes']) {
-                        // Fallback for simple manual CSV format
-                        failedAttrs = String(row['Failed Attributes']).split(',').map(s => s.trim()).filter(s => s);
-                    } else {
-                        // Automatic extraction from exported system columns
-                        const attributesToCheck = [
-                            'Correctly_Diagnose', 'responsiveness', 'effectiveness', 'soft_Skills',
-                            'language', 'FCR', 'ownership', 'product_Awareness', 'tempo_Values',
-                            'process_Awareness', 'verification', 'documentations', 'crm_update',
-                            'workflow', 'Interaction_Protocols', 'fitness_fluency',
-                            'Brand_Representation_Ownership', 'comm_Brand_Representation_Ownership'
-                        ];
+                    // Process QA Data (Assumes Sheet 1)
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    const newQaData = jsonData.map((row, index) => {
+                        // Extract Date
+                        let dRaw = row['created_at'] || row['date_created'] || row['Date'];
+                        let d;
+                        if (typeof dRaw === 'number') {
+                             d = new Date((dRaw - (25567 + 2)) * 86400 * 1000);
+                        } else {
+                             d = new Date(dRaw);
+                        }
+                        if (isNaN(d.getTime())) d = new Date(); 
                         
-                        attributesToCheck.forEach(attr => {
-                            if (row[attr] && String(row[attr]).trim().toLowerCase() === 'no') {
-                                // Format snake_case and camelCase to readable titles
-                                const formattedAttr = attr.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                                failedAttrs.push(formattedAttr);
-                            }
-                        });
+                        // Extract Failed Attributes
+                        let failedAttrs = [];
+                        if (row['Failed Attributes']) {
+                            failedAttrs = String(row['Failed Attributes']).split(',').map(s => s.trim()).filter(s => s);
+                        } else {
+                            const attributesToCheck = [
+                                'Correctly_Diagnose', 'responsiveness', 'effectiveness', 'soft_Skills',
+                                'language', 'FCR', 'ownership', 'product_Awareness', 'tempo_Values',
+                                'process_Awareness', 'verification', 'documentations', 'crm_update',
+                                'workflow', 'Interaction_Protocols', 'fitness_fluency',
+                                'Brand_Representation_Ownership', 'comm_Brand_Representation_Ownership'
+                            ];
+                            
+                            attributesToCheck.forEach(attr => {
+                                if (row[attr] && String(row[attr]).trim().toLowerCase() === 'no') {
+                                    const formattedAttr = attr.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                    failedAttrs.push(formattedAttr);
+                                }
+                            });
+                        }
+
+                        // Extract Score
+                        let rawScore = row['Final_Score'] || row['Score'];
+                        let scoreVal = 0;
+                        if (typeof rawScore === 'string') {
+                            scoreVal = Number(rawScore.replace('%', '').trim());
+                        } else if (typeof rawScore === 'number') {
+                            scoreVal = rawScore <= 1 && rawScore > 0 ? Math.round(rawScore * 100) : rawScore;
+                        }
+
+                        // Must match SQL schema column names exactly
+                        return {
+                            id: String(row['id'] || row['ID'] || `QA-${Date.now()}-${index}`),
+                            date: d.toISOString().split('T')[0],
+                            month: d.toLocaleString('default', { month: 'short', year: 'numeric' }),
+                            quarter: `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`,
+                            year: d.getFullYear().toString(),
+                            agent: String(row['Agent_Name'] || row['Agent'] || 'Unknown Agent'),
+                            queue: String(row['Channel'] || row['Queue'] || 'Unknown Queue'),
+                            score: scoreVal || 0,
+                            failedAttributes: failedAttrs
+                        };
+                    });
+                    
+                    // Process 5 Whys (If a sheet contains "Whys" in the name)
+                    const whysSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('whys'));
+                    let newFiveWhysData = [];
+                    if (whysSheetName) {
+                        const whysSheet = workbook.Sheets[whysSheetName];
+                        const whysJson = XLSX.utils.sheet_to_json(whysSheet);
+                        newFiveWhysData = whysJson.map((row, index) => ({
+                            id: String(row['ID'] || `RC-${Date.now()}-${index}`),
+                            date: String(row['Date'] || new Date().toISOString().split('T')[0]),
+                            errorAttribute: String(row['Error Attribute'] || 'Unknown'),
+                            problemStatement: String(row['Problem Statement'] || ''),
+                            whys: [row['Why 1'], row['Why 2'], row['Why 3'], row['Why 4'], row['Why 5']].filter(Boolean),
+                            rootCause: String(row['Root Cause'] || ''),
+                            correctiveAction: String(row['Corrective Action'] || ''),
+                            preventiveAction: String(row['Preventive Action'] || ''),
+                            owner: String(row['Owner'] || 'Unassigned'),
+                            status: String(row['Status'] || 'In Progress')
+                        }));
                     }
 
-                    // Extract Score
-                    let rawScore = row['Final_Score'] || row['Score'];
-                    let scoreVal = 0;
-                    if (typeof rawScore === 'string') {
-                        scoreVal = Number(rawScore.replace('%', '').trim());
-                    } else if (typeof rawScore === 'number') {
-                        scoreVal = rawScore <= 1 && rawScore > 0 ? Math.round(rawScore * 100) : rawScore;
+                    // Upload to Supabase using upsert (inserts or updates based on primary key 'id')
+                    if (newQaData.length > 0) {
+                        const { error: insertError } = await supabaseClient.from('qa_data').upsert(newQaData);
+                        if (insertError) throw insertError;
                     }
 
-                    return {
-                        id: row['id'] || row['ID'] || `QA-${1000 + index}`,
-                        date: d.toISOString().split('T')[0],
-                        month: d.toLocaleString('default', { month: 'short', year: 'numeric' }),
-                        quarter: `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`,
-                        year: d.getFullYear().toString(),
-                        agent: row['Agent_Name'] || row['Agent'] || 'Unknown Agent',
-                        queue: row['Channel'] || row['Queue'] || 'Unknown Queue',
-                        score: scoreVal || 0,
-                        failedAttributes: failedAttrs
-                    };
-                });
-                
-                // Process 5 Whys (If a sheet contains "Whys" in the name)
-                const whysSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('whys'));
-                if (whysSheetName) {
-                    const whysSheet = workbook.Sheets[whysSheetName];
-                    const whysJson = XLSX.utils.sheet_to_json(whysSheet);
-                    fiveWhysData = whysJson.map((row, index) => ({
-                        id: row['ID'] || `RC-00${index + 1}`,
-                        date: row['Date'] || new Date().toISOString().split('T')[0],
-                        errorAttribute: row['Error Attribute'] || 'Unknown',
-                        problemStatement: row['Problem Statement'] || '',
-                        whys: [row['Why 1'], row['Why 2'], row['Why 3'], row['Why 4'], row['Why 5']].filter(Boolean),
-                        rootCause: row['Root Cause'] || '',
-                        correctiveAction: row['Corrective Action'] || '',
-                        preventiveAction: row['Preventive Action'] || '',
-                        owner: row['Owner'] || 'Unassigned',
-                        status: row['Status'] || 'In Progress'
-                    }));
-                } else {
-                    fiveWhysData = [];
+                    if (newFiveWhysData.length > 0) {
+                        const { error: insertWhyError } = await supabaseClient.from('five_whys').upsert(newFiveWhysData);
+                        if (insertWhyError) throw insertWhyError;
+                    }
+
+                    alert(`Success! Saved to Supabase.`);
+                    e.target.value = ""; // reset input
+                    timeFilter = 'All'; 
+                    
+                    // Reload data from DB to ensure sync
+                    await loadDataFromSupabase();
+                    switchTab('dashboard'); 
+
+                } catch (err) {
+                    console.error("Upload Error:", err);
+                    alert("Error processing or uploading file: " + err.message);
+                } finally {
+                    showLoading(false);
                 }
-
-                alert(`Success! Loaded ${qaData.length} records.`);
-                timeFilter = 'All'; 
-                populateFilters();
-                switchTab('dashboard'); 
-                e.target.value = ""; // reset input
             };
             reader.readAsArrayBuffer(file);
         }
@@ -487,7 +560,7 @@
             // Metrics
             const totalScore = filtered.reduce((acc, curr) => acc + curr.score, 0);
             const avgScore = filtered.length ? Math.round(totalScore / filtered.length) : 0;
-            const totalErrors = filtered.reduce((acc, curr) => acc + curr.failedAttributes.length, 0);
+            const totalErrors = filtered.reduce((acc, curr) => acc + curr.failedAttributes?.length || 0, 0);
             const activePlans = fiveWhysData.filter(d => d.status === 'In Progress').length;
 
             document.getElementById('kpi-avg-score').textContent = `${avgScore}%`;
@@ -600,7 +673,7 @@
                 if (!agents[d.agent]) agents[d.agent] = { name: d.agent, total: 0, count: 0, errors: 0 };
                 agents[d.agent].total += d.score;
                 agents[d.agent].count += 1;
-                agents[d.agent].errors += d.failedAttributes.length;
+                agents[d.agent].errors += d.failedAttributes?.length || 0;
             });
             
             const agentData = Object.values(agents)
@@ -649,9 +722,11 @@
         function renderErrors(filtered) {
             const errors = {};
             filtered.forEach(d => {
-                d.failedAttributes.forEach(attr => {
-                    errors[attr] = (errors[attr] || 0) + 1;
-                });
+                if (d.failedAttributes) {
+                    d.failedAttributes.forEach(attr => {
+                        errors[attr] = (errors[attr] || 0) + 1;
+                    });
+                }
             });
             const errorData = Object.entries(errors)
                 .map(([name, count]) => ({ name, count }))
@@ -716,7 +791,7 @@
                         </h4>
                         <div class="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
                             
-                            ${item.whys.map((why, i) => `
+                            ${(item.whys || []).map((why, i) => `
                                 <div class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
                                     <div class="flex items-center justify-center w-8 h-8 rounded-full border border-white bg-slate-200 text-slate-600 font-bold text-sm shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
                                         ${i + 1}
@@ -776,9 +851,9 @@
         // --- STARTUP ---
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
-            populateFilters();
             setupTabs();
-            renderAll();
+            // Automatically fetch data from Supabase upon loading
+            loadDataFromSupabase(); 
         });
 
     </script>
