@@ -267,7 +267,7 @@
                             <div class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-slate-700 mb-1">Google Cloud API Key (with Sheets API enabled)</label>
-                                    <input type="password" id="gsheet-api-key" placeholder="AIzaSyB..." class="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                    <input type="password" id="gsheet-api-key" value="AIzaSyDBrCIZdWLSTUzGXM-5eQIv_ORkwzhqwdM" placeholder="AIzaSyB..." class="w-full px-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                                 </div>
                                 
                                 <div>
@@ -284,7 +284,7 @@
                             </div>
                             
                             <div class="mt-5 pt-5 border-t border-blue-100 text-xs text-slate-500 leading-relaxed">
-                                <strong>How AI Works:</strong> During sync, the tool identifies failed attributes marked "No". It looks for any column containing the word <em>"comment"</em> or <em>"remark"</em>. If a failure doesn't have an existing 5 Whys Analysis, the built-in AI model runs a root cause analysis in the background automatically.
+                                <strong>How AI Works:</strong> During sync, the tool identifies failed attributes marked "No". It looks for any column containing the words <em>"comment", "remark", "feedback", "note", or "reason"</em>. If a failure doesn't have an existing 5 Whys Analysis, the built-in AI model runs a root cause analysis in the background automatically.
                             </div>
                         </div>
 
@@ -419,7 +419,7 @@
 
         // --- AI GENERATOR (GEMINI) ---
         async function generate5WhysAI(attribute, comments, agent) {
-            // Environment provides standard Gemini API connection
+            // Environment provides standard Gemini API connection dynamically
             const apiKey = ""; 
             const promptText = `Analyze this failed customer service QA interaction. 
             Attribute failed: "${attribute}". 
@@ -461,8 +461,11 @@
                     if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
                     
                     const result = await response.json();
-                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    
                     if (text) {
+                        // Strip out potential markdown formatting that breaks JSON.parse
+                        text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
                         return JSON.parse(text);
                     } else {
                         throw new Error("Empty response from AI");
@@ -831,9 +834,9 @@
                     let failedAttrs = [];
                     let rowComments = "";
 
-                    // Extract general comments from the row to pass to AI
+                    // Extract general comments from the row to pass to AI (expanded list of column names)
                     Object.keys(row).forEach(key => {
-                        if (key.toLowerCase().includes('comment') || key.toLowerCase().includes('remark')) {
+                        if (key.toLowerCase().match(/comment|remark|note|feedback|reason/)) {
                             rowComments += `${key}: ${row[key]} | `;
                         }
                     });
