@@ -452,14 +452,12 @@
             let options = new Set();
             
             qaData.forEach(d => {
-                if (d.failedAttributes && d.failedAttributes.length > 0) {
-                    if (type === 'Attribute') {
-                        d.failedAttributes.forEach(attr => options.add(attr));
-                    } else if (type === 'Agent') {
-                        options.add(d.agent);
-                    } else if (type === 'Queue') {
-                        options.add(d.queue);
-                    }
+                if (type === 'Attribute' && d.failedAttributes && d.failedAttributes.length > 0) {
+                    d.failedAttributes.forEach(attr => options.add(attr));
+                } else if (type === 'Agent' && d.agent) {
+                    options.add(d.agent);
+                } else if (type === 'Queue' && d.queue) {
+                    options.add(d.queue);
                 }
             });
             
@@ -487,13 +485,12 @@
             let allFailedAttrs = new Set();
 
             qaData.forEach(row => {
-                if (!row.failedAttributes || row.failedAttributes.length === 0) return;
                 let match = false;
-                if (type === 'Attribute' && row.failedAttributes.includes(value)) match = true;
+                if (type === 'Attribute' && row.failedAttributes && row.failedAttributes.includes(value)) match = true;
                 if (type === 'Agent' && row.agent === value) match = true;
                 if (type === 'Queue' && row.queue === value) match = true;
 
-                if (match) {
+                if (match && row.failedAttributes) {
                     row.failedAttributes.forEach(a => allFailedAttrs.add(a));
                 }
             });
@@ -516,7 +513,7 @@
 
             const payload = {
                 contents: [{ parts: [{ text: promptText }] }],
-                systemInstruction: { parts: [{ text: "You are an expert Quality Assurance and Process Improvement analyst. You MUST return ONLY valid JSON matching the requested structure. No markdown formatting." }] },
+                systemInstruction: { parts: [{ text: "You are an expert Quality Assurance and Process Improvement analyst. You MUST return ONLY valid JSON matching the requested structure. Do NOT wrap your response in markdown blocks." }] },
                 generationConfig: {
                     responseMimeType: "application/json"
                 }
@@ -541,6 +538,7 @@
                 let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
                 
                 if (text) {
+                    // Strip out potential markdown formatting that breaks JSON.parse
                     text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
                     const aiResult = JSON.parse(text);
 
@@ -572,7 +570,7 @@
                 }
             } catch (error) {
                 console.error("AI Generation failed:", error);
-                alert("Failed to generate AI analysis. Error from Google API:\n" + error.message);
+                alert("Failed to generate AI analysis. Error from Google API:\n\n" + error.message);
             } finally {
                 showLoading(false);
             }
@@ -819,26 +817,40 @@
                     throw new Error("No data found in the sheet.");
                 }
 
-                // Convert 2D Array into Array of Objects
-                const headers = dataJson.values[0];
+                // 3. Find the actual header row (Skip blank rows/titles at the top)
+                let headerRowIndex = 0;
+                for (let r = 0; r < Math.min(10, dataJson.values.length); r++) {
+                    const rowText = (dataJson.values[r] || []).join('').toLowerCase();
+                    if (rowText.includes('agent') || rowText.includes('score') || rowText.includes('channel') || rowText.includes('id')) {
+                        headerRowIndex = r;
+                        break;
+                    }
+                }
+
+                // Clean the headers (removes trailing invisible spaces)
+                const headers = dataJson.values[headerRowIndex].map(h => h ? String(h).trim() : '');
+                
                 const qaParsedJson = [];
-                for (let i = 1; i < dataJson.values.length; i++) {
-                    // CRITICAL FIX: Skip completely empty rows that cause duplicate ID issues and wrong row counts
+                
+                // Process the data rows, skipping completely empty ones
+                for (let i = headerRowIndex + 1; i < dataJson.values.length; i++) {
                     if (!dataJson.values[i] || dataJson.values[i].length === 0) continue;
                     
                     let rowObj = {};
                     let hasRealData = false;
+                    
                     for (let j = 0; j < headers.length; j++) {
+                        if (!headers[j]) continue;
                         let val = dataJson.values[i][j];
                         if (val !== undefined && String(val).trim() !== '') {
                             hasRealData = true;
                         }
-                        rowObj[headers[j]] = val || '';
+                        rowObj[headers[j]] = val !== undefined ? val : '';
                     }
                     
                     // Further validation: only accept rows that actually have an Agent or an ID
-                    const hasId = rowObj['id'] || rowObj['ID'] || rowObj['Id'];
-                    const hasAgent = rowObj['Agent_Name'] || rowObj['Agent'];
+                    const hasId = rowObj['id'] || rowObj['ID'] || rowObj['Id'] || rowObj['Helperid'] || rowObj['Conversation_ID'];
+                    const hasAgent = rowObj['Agent_Name'] || rowObj['Agent Name'] || rowObj['Agent'];
                     
                     if(hasRealData && (hasId || hasAgent)) {
                         qaParsedJson.push(rowObj);
@@ -872,8 +884,8 @@
                     
                     // Filter empty rows
                     const qaJson = rawQaJson.filter(row => {
-                        const hasId = row['id'] || row['ID'] || row['Id'];
-                        const hasAgent = row['Agent_Name'] || row['Agent'];
+                        const hasId = row['id'] || row['ID'] || row['Id'] || row['Helperid'] || row['Conversation_ID'];
+                        const hasAgent = row['Agent_Name'] || row['Agent Name'] || row['Agent'];
                         return hasId || hasAgent;
                     });
 
@@ -913,8 +925,9 @@
                     
                     let failedAttrs = [];
 
-                    if (row['Failed Attributes']) {
-                        failedAttrs = String(row['Failed Attributes']).split(',').map(s => s.trim()).filter(s => s);
+                    let rawFailedAttrs = row['Failed Attributes'] || row['Failed_Attributes'] || row['failed_attributes'];
+                    if (rawFailedAttrs) {
+                        failedAttrs = String(rawFailedAttrs).split(',').map(s => s.trim()).filter(s => s);
                     } else {
                         const attributesToCheck = [
                             'Correctly_Diagnose', 'responsiveness', 'effectiveness', 'soft_Skills',
@@ -932,7 +945,7 @@
                         });
                     }
 
-                    let rawScore = row['Final_Score'] || row['Score'];
+                    let rawScore = row['Final_Score'] || row['Final Score'] || row['Score'] || row['score'];
                     let scoreVal = 0;
                     if (typeof rawScore === 'string') {
                         scoreVal = Number(rawScore.replace('%', '').trim());
@@ -940,9 +953,14 @@
                         scoreVal = rawScore <= 1 && rawScore > 0 ? Math.round(rawScore * 100) : rawScore;
                     }
 
-                    let extractedId = row['id'] || row['ID'] || row['Id'];
+                    let extractedId = row['id'] || row['ID'] || row['Id'] || row['Helperid'] || row['Conversation_ID'];
                     const qaId = extractedId ? String(extractedId).trim() : `QA-${d.getTime()}-${index}`;
-                    const agentName = String(row['Agent_Name'] || row['Agent'] || 'Unknown Agent');
+                    
+                    const agentNameRaw = row['Agent_Name'] || row['Agent Name'] || row['Agent'] || row['agent_name'] || row['agent'];
+                    const agentName = agentNameRaw ? String(agentNameRaw).trim() : 'Unknown Agent';
+
+                    const queueRaw = row['Channel'] || row['Queue'] || row['channel'] || row['queue'];
+                    const queueName = queueRaw ? String(queueRaw).trim() : 'Unknown Queue';
 
                     return {
                         id: qaId,
@@ -951,7 +969,7 @@
                         quarter: `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`,
                         year: d.getFullYear().toString(),
                         agent: agentName,
-                        queue: String(row['Channel'] || row['Queue'] || 'Unknown Queue'),
+                        queue: queueName,
                         score: scoreVal || 0,
                         failedAttributes: failedAttrs
                     };
