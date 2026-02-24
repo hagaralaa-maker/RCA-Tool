@@ -100,6 +100,12 @@
             </div>
         </header>
 
+        <!-- Floating AI Process Indicator -->
+        <div id="ai-status" class="absolute bottom-6 right-6 bg-slate-900 text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 text-sm font-medium hidden z-50 transition-opacity">
+            <i data-lucide="cpu" class="w-5 h-5 text-blue-400 animate-pulse"></i>
+            <span id="ai-status-text">Processing AI Analyses...</span>
+        </div>
+
         <!-- SCROLLABLE CONTENT AREA -->
         <main class="flex-1 overflow-y-auto p-8 relative">
             
@@ -471,7 +477,6 @@
             
             if (!value) return alert("Please select a specific target value to analyze.");
 
-            // Get Gemini key from input when hosted on GitHub Pages
             const apiKey = document.getElementById('gemini-api-key').value.trim() || localStorage.getItem('qa_gemini_api_key'); 
             if (!apiKey) {
                 alert("Please add your Gemini API Key in the Data Setup tab to use the AI features.");
@@ -500,37 +505,37 @@
             const promptText = `Perform a systemic 5 Whys root cause analysis for customer service QA failures. 
             Focus area: ${type} = "${value}". 
             The following attributes failed across multiple audits in this focus area: ${Array.from(allFailedAttrs).join(', ')}.
-            Generate a realistic, generalized 5 Whys root cause analysis exploring why this specific ${type.toLowerCase()} might be experiencing these failures. Return the output STRICTLY as a JSON object matching this schema.`;
+            Generate a realistic, generalized 5 Whys root cause analysis exploring why this specific ${type.toLowerCase()} might be experiencing these failures. Return the output STRICTLY as a JSON object matching exactly this schema:
+            {
+                "problemStatement": "A clear statement of the problem",
+                "whys": ["Why 1", "Why 2", "Why 3", "Why 4", "Why 5"],
+                "rootCause": "The final identified root cause",
+                "correctiveAction": "Immediate action to fix",
+                "preventiveAction": "Systemic action to prevent"
+            }`;
 
             const payload = {
                 contents: [{ parts: [{ text: promptText }] }],
-                systemInstruction: { parts: [{ text: "You are an expert Quality Assurance and Process Improvement analyst. Perform a logical 5 Whys root cause analysis based on the provided focus area. Do not use formatting outside of the requested JSON." }] },
+                systemInstruction: { parts: [{ text: "You are an expert Quality Assurance and Process Improvement analyst. You MUST return ONLY valid JSON matching the requested structure. No markdown formatting." }] },
                 generationConfig: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: "OBJECT",
-                        properties: {
-                            problemStatement: { type: "STRING", description: "A clear statement of the problem being analyzed." },
-                            whys: { type: "ARRAY", items: { type: "STRING" }, description: "Array of exactly 5 'Why' statements logically progressing to the root cause." },
-                            rootCause: { type: "STRING" },
-                            correctiveAction: { type: "STRING", description: "Immediate action to fix the specific instance." },
-                            preventiveAction: { type: "STRING", description: "Systemic action to prevent it from happening again." }
-                        },
-                        required: ["problemStatement", "whys", "rootCause", "correctiveAction", "preventiveAction"]
-                    }
+                    responseMimeType: "application/json"
                 }
             };
 
             showLoading(true, `Generating AI Analysis for ${value}...`);
 
             try {
+                // Using the standard public gemini endpoint
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
-                if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+                if (!response.ok) {
+                    const errBody = await response.json().catch(() => ({}));
+                    throw new Error(errBody.error?.message || `HTTP Error ${response.status}`);
+                }
                 
                 const result = await response.json();
                 let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -567,7 +572,7 @@
                 }
             } catch (error) {
                 console.error("AI Generation failed:", error);
-                alert("Failed to generate AI analysis. Check your Gemini API Key and try again.");
+                alert("Failed to generate AI analysis. Error from Google API:\n" + error.message);
             } finally {
                 showLoading(false);
             }
@@ -795,13 +800,19 @@
             try {
                 // 1. Get Spreadsheet metadata to find the exact name of the first sheet
                 const metaRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?key=${apiKeyInput}`);
-                if (!metaRes.ok) throw new Error("Could not access the Google Sheet. Check your API Key and ensure the sheet is shared.");
+                if (!metaRes.ok) {
+                    const errBody = await metaRes.json().catch(() => ({}));
+                    throw new Error(errBody.error?.message || `HTTP Error ${metaRes.status}`);
+                }
                 const metaJson = await metaRes.json();
                 const firstSheetTitle = metaJson.sheets[0].properties.title;
 
                 // 2. Fetch the actual data values from the first sheet
                 const dataRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(firstSheetTitle)}!A:ZZ?key=${apiKeyInput}`);
-                if (!dataRes.ok) throw new Error("Failed to fetch sheet data values.");
+                if (!dataRes.ok) {
+                    const errBody = await dataRes.json().catch(() => ({}));
+                    throw new Error(errBody.error?.message || `HTTP Error ${dataRes.status}`);
+                }
                 const dataJson = await dataRes.json();
 
                 if (!dataJson.values || dataJson.values.length === 0) {
@@ -824,7 +835,12 @@
                         }
                         rowObj[headers[j]] = val || '';
                     }
-                    if(hasRealData) {
+                    
+                    // Further validation: only accept rows that actually have an Agent or an ID
+                    const hasId = rowObj['id'] || rowObj['ID'] || rowObj['Id'];
+                    const hasAgent = rowObj['Agent_Name'] || rowObj['Agent'];
+                    
+                    if(hasRealData && (hasId || hasAgent)) {
                         qaParsedJson.push(rowObj);
                     }
                 }
@@ -833,7 +849,7 @@
 
             } catch (error) {
                 console.error("Google Sheets API Error:", error);
-                if (!isAutoSync) alert("Google Sheets Sync Error: " + error.message);
+                if (!isAutoSync) alert("Google Sheets Sync Error:\n\n" + error.message);
                 if (!isAutoSync) showLoading(false);
             }
         }
@@ -855,7 +871,11 @@
                     const rawQaJson = XLSX.utils.sheet_to_json(worksheet);
                     
                     // Filter empty rows
-                    const qaJson = rawQaJson.filter(row => Object.values(row).some(v => v !== null && String(v).trim() !== ''));
+                    const qaJson = rawQaJson.filter(row => {
+                        const hasId = row['id'] || row['ID'] || row['Id'];
+                        const hasAgent = row['Agent_Name'] || row['Agent'];
+                        return hasId || hasAgent;
+                    });
 
                     const whysSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('whys'));
                     let whysJson = [];
@@ -920,7 +940,8 @@
                         scoreVal = rawScore <= 1 && rawScore > 0 ? Math.round(rawScore * 100) : rawScore;
                     }
 
-                    const qaId = String(row['id'] || row['ID'] || `QA-${d.getTime()}-${index}`);
+                    let extractedId = row['id'] || row['ID'] || row['Id'];
+                    const qaId = extractedId ? String(extractedId).trim() : `QA-${d.getTime()}-${index}`;
                     const agentName = String(row['Agent_Name'] || row['Agent'] || 'Unknown Agent');
 
                     return {
@@ -937,7 +958,7 @@
                 }).filter(item => item.agent.toLowerCase() !== 'mohamed halim'); 
                 
                 let newFiveWhysData = whysJson.map((row, index) => ({
-                    id: String(row['ID'] || `RC-${Date.now()}-${index}`),
+                    id: String(row['ID'] || `RC-${Date.now()}-${index}`).trim(),
                     date: String(row['Date'] || new Date().toISOString().split('T')[0]),
                     errorAttribute: String(row['Error Attribute'] || 'Unknown'),
                     problemStatement: String(row['Problem Statement'] || ''),
@@ -950,8 +971,13 @@
                 }));
 
                 // FIX FOR DUPLICATES: Deduplicate rows by ID before Upserting to prevent ON CONFLICT errors
-                const uniqueQaData = Array.from(new Map(newQaData.map(item => [item.id, item])).values());
-                const uniqueWhysData = Array.from(new Map(newFiveWhysData.map(item => [item.id, item])).values());
+                const uniqueQaDataMap = new Map();
+                newQaData.forEach(item => uniqueQaDataMap.set(item.id, item));
+                const uniqueQaData = Array.from(uniqueQaDataMap.values());
+
+                const uniqueWhysDataMap = new Map();
+                newFiveWhysData.forEach(item => uniqueWhysDataMap.set(item.id, item));
+                const uniqueWhysData = Array.from(uniqueWhysDataMap.values());
 
                 if (uniqueQaData.length > 0) {
                     const { error: insertError } = await supabaseClient.from('qa_data').upsert(uniqueQaData);
@@ -971,7 +997,7 @@
 
             } catch (err) {
                 console.error("Upload/Processing Error:", err);
-                if (!isAutoSync) alert("Error processing or uploading data: " + err.message);
+                if (!isAutoSync) alert("Error processing or uploading data:\n\n" + err.message);
                 if (!isAutoSync) showLoading(false);
             }
         }
